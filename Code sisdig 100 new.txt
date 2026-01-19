@@ -1,0 +1,290 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity main is
+    Port (
+        
+        clk       : in  STD_LOGIC;
+        reset     : in  STD_LOGIC;
+        enable    : in  STD_LOGIC; 
+        mode      : in  STD_LOGIC; 
+        switches  : in  STD_LOGIC_VECTOR (3 downto 0);
+
+        led_ok    : out STD_LOGIC;
+        Led_wrong : out STD_LOGIC;
+        led_set   : out STD_LOGIC;
+        led_input : out STD_LOGIC;
+
+        pw1, pw2, pw3, pw4, pw5, pw6, pw7, pw8 : out STD_LOGIC;
+
+        seg       : out STD_LOGIC_VECTOR (6 downto 0);
+        an        : out STD_LOGIC_VECTOR (7 downto 0);
+
+        -- ? TAMBAHAN: BUZZER
+        buzzer    : out STD_LOGIC
+    );
+end main;
+
+architecture Behavioral of main is
+
+    -- ===============================
+    -- SIGNAL UTAMA
+    -- ===============================
+    signal pw_reg       : STD_LOGIC_VECTOR (31 downto 0) := (others => '0');
+    signal input_pw     : STD_LOGIC_VECTOR (31 downto 0) := (others => '0');
+    signal count        : INTEGER range 0 to 8 := 0;
+
+    signal enable_reg   : STD_LOGIC := '0';
+    signal wrong_reg    : STD_LOGIC := '0';
+    signal ok_reg       : STD_LOGIC := '0';
+
+    signal lock_counter : unsigned(31 downto 0) := (others => '0');
+
+    -- ? FLAG IZIN RESET (TAMBAHAN)
+    signal allow_reset  : STD_LOGIC := '0';
+
+    -- ===============================
+    -- 7 SEGMENT
+    -- ===============================
+    signal refresh_cnt  : unsigned(19 downto 0) := (others => '0');
+    signal digit_select : std_logic_vector(1 downto 0);
+    signal hex_temp     : std_logic_vector(6 downto 0);
+
+    -- ===============================
+    -- ? BUZZER SYSTEM (TAMBAHAN SAJA)
+    -- ===============================
+    -- buzz_req = "00" tidak ada request
+    -- buzz_req = "01" beep 1x (benar)
+    -- buzz_req = "10" beep 2x (salah)
+    signal buzz_req     : std_logic_vector(1 downto 0) := "00";
+    signal buzzer_reg   : STD_LOGIC := '0';
+    signal buzz_counter : unsigned(23 downto 0) := (others => '0');
+    signal beeps_left   : integer range 0 to 7 := 0;
+    signal buzz_phase   : STD_LOGIC := '0'; -- '0'=BEEP, '1'=GAP
+
+begin
+
+    -- ==========================================
+    -- 1. LOGIKA PASSWORD & LOCK (CODE LAMA)
+    -- ==========================================
+    process(clk)
+    begin
+        if rising_edge(clk) then
+
+            -- ? TAMBAHAN: default no request (pulse)
+              buzz_req <= "00";
+      
+
+            -- ? RESET HANYA SAAT OPEN
+            if reset = '1' and ok_reg = '1' then
+                pw_reg       <= (others => '0'); -- password lama TERHAPUS
+                input_pw     <= (others => '0');
+                count        <= 0;
+                ok_reg       <= '0';
+                wrong_reg    <= '0';
+                enable_reg   <= '0';
+                lock_counter <= (others => '0');
+
+            else
+                -- Rising edge enable
+                if enable = '1' and enable_reg = '0' then
+                    if mode = '1' then
+                        -- SET PASSWORD
+                        if count < 8 then
+                            pw_reg((count*4+3) downto (count*4)) <= switches;
+                            count <= count + 1;
+                        end if;
+                    else
+                        -- INPUT PASSWORD
+                        if count < 8 then
+                            input_pw((count*4+3) downto (count*4)) <= switches;
+                            count <= count + 1;
+                        end if;
+                    end if;
+                end if;
+
+                -- CEK PASSWORD
+                if mode = '0' and count = 8 then
+                    if input_pw = pw_reg then
+                        ok_reg       <= '1';
+                        wrong_reg    <= '0';
+                        lock_counter <= (others => '0');
+
+                        -- ? TAMBAHAN: BENAR -> bip 1x
+                        buzz_req <= "01";
+                    else
+                        wrong_reg <= '1';
+                        ok_reg       <= '0';
+
+                        -- ? TAMBAHAN: SALAH -> bip 2x
+                        buzz_req <= "10";
+                    end if;
+
+                    input_pw <= (others => '0');
+                    count    <= 0;
+                end if;
+
+                -- AUTO LOCK
+                if ok_reg = '1' then
+                    if lock_counter < to_unsigned(500000000, lock_counter'length) then
+                        lock_counter <= lock_counter + 1;
+                    else
+                        ok_reg       <= '0';
+                        lock_counter <= (others => '0');
+                    end if;
+                else
+                    lock_counter <= (others => '0');
+                end if;
+
+                enable_reg <= enable;
+            end if;
+        end if;
+    end process;
+
+    -- ==========================================
+    -- ? 2. BUZZER PASSIVE (TAMBAHAN SAJA)
+    --    (Tanpa multiple driver + 2 beep benar2 kepisah)
+    -- ==========================================
+    process(clk)
+    begin
+        if rising_edge(clk) then
+            if reset = '1' then
+                buzzer_reg   <= '0';
+                buzz_counter <= (others => '0');
+                beeps_left   <= 0;
+                buzz_phase   <= '0';
+            else
+                -- start request hanya saat idle
+                if (beeps_left = 0) and (buzz_req /= "00") then
+                    if buzz_req = "01" then
+                        beeps_left <= 2;
+                    elsif buzz_req = "10" then
+                        beeps_left <= 7;
+                    end if;
+
+                    buzz_phase   <= '0';  -- mulai dari BEEP
+                    buzz_counter <= (others => '0');
+                    buzzer_reg   <= '0';
+                end if;
+
+                -- jalankan beep jika ada
+                if beeps_left > 0 then
+                    buzz_counter <= buzz_counter + 1;
+
+                    if buzz_phase = '0' then
+                        -- ===== BEEP ON (square wave) =====
+                        buzzer_reg <= buzz_counter(15);
+
+                        -- durasi beep
+                        if buzz_counter = to_unsigned(5_000_000, buzz_counter'length) then
+                            buzz_counter <= (others => '0');
+                            buzzer_reg   <= '0';
+                            buzz_phase   <= '1'; -- masuk GAP
+                        end if;
+
+                    else
+                        -- ===== GAP OFF (jeda antar beep) =====
+                        buzzer_reg <= '0';
+
+                        -- durasi gap
+                        if buzz_counter = to_unsigned(1_500_000, buzz_counter'length) then
+                            buzz_counter <= (others => '0');
+                            beeps_left   <= beeps_left - 1;
+                            buzz_phase   <= '0'; -- balik ke BEEP
+                        end if;
+                    end if;
+
+                else
+                    buzzer_reg <= '0';
+                    buzz_counter <= (others => '0');
+                    buzz_phase <= '0';
+                end if;
+            end if;
+        end if;
+    end process;
+
+    buzzer <= buzzer_reg;
+
+    -- ===============================
+    -- OUTPUT LED (CODE LAMA)
+    -- ===============================
+    led_ok    <= ok_reg;
+    Led_wrong <= wrong_reg;
+    led_set   <= mode;
+    led_input <= not mode;
+
+    pw1 <= '1' when count >= 1 else '0';
+    pw2 <= '1' when count >= 2 else '0';
+    pw3 <= '1' when count >= 3 else '0';
+    pw4 <= '1' when count >= 4 else '0';
+    pw5 <= '1' when count >= 5 else '0';
+    pw6 <= '1' when count >= 6 else '0';
+    pw7 <= '1' when count >= 7 else '0';
+    pw8 <= '1' when count >= 8 else '0';
+
+-- ===============================
+-- 7 SEGMENT SCAN (PASS / FAIL)
+-- ===============================
+process(clk, reset)
+begin
+    if reset = '1' then
+        refresh_cnt <= (others => '0');
+    elsif rising_edge(clk) then
+        refresh_cnt <= refresh_cnt + 1;
+    end if;
+end process;
+
+digit_select <= std_logic_vector(refresh_cnt(19 downto 18));
+
+process(digit_select, ok_reg)
+begin
+    an <= "11111111";
+
+case digit_select is
+    -- Digit 3 (kiri) ? karakter pertama
+    when "11" =>
+        an <= "11110111";
+        if ok_reg = '1' then
+            hex_temp <= "0001100"; -- P
+        else
+            hex_temp <= "0001110"; -- F
+        end if;
+
+    -- Digit 2
+    when "10" =>
+        an <= "11111011";
+        if ok_reg = '1' then
+            hex_temp <= "0001000"; -- A
+        else
+            hex_temp <= "0001000"; -- A
+        end if;
+
+    -- Digit 1
+    when "01" =>
+        an <= "11111101";
+        if ok_reg = '1' then
+            hex_temp <= "0010010"; -- S
+        else
+            hex_temp <= "1111001"; -- I
+        end if;
+
+    -- Digit 0 (kanan) ? karakter terakhir
+    when "00" =>
+        an <= "11111110";
+        if ok_reg = '1' then
+            hex_temp <= "0010010"; -- S
+        else
+            hex_temp <= "1000111"; -- L
+        end if;
+
+    when others =>
+        hex_temp <= "1111111"; -- Blank
+end case;
+
+end process;
+
+seg <= hex_temp;
+
+
+end Behavioral;
