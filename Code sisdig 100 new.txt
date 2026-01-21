@@ -41,7 +41,6 @@ architecture Behavioral of main is
 
     signal lock_counter : unsigned(31 downto 0) := (others => '0');
 
-    -- ? FLAG IZIN RESET (TAMBAHAN)
     signal allow_reset  : STD_LOGIC := '0';
 
     -- ===============================
@@ -52,11 +51,9 @@ architecture Behavioral of main is
     signal hex_temp     : std_logic_vector(6 downto 0);
 
     -- ===============================
-    -- ? BUZZER SYSTEM (TAMBAHAN SAJA)
+    -- BUZZER SYSTEM (TAMBAHAN SAJA)
     -- ===============================
-    -- buzz_req = "00" tidak ada request
-    -- buzz_req = "01" beep 1x (benar)
-    -- buzz_req = "10" beep 2x (salah)
+
     signal buzz_req     : std_logic_vector(1 downto 0) := "00";
     signal buzzer_reg   : STD_LOGIC := '0';
     signal buzz_counter : unsigned(23 downto 0) := (others => '0');
@@ -143,8 +140,7 @@ begin
     end process;
 
     -- ==========================================
-    -- ? 2. BUZZER PASSIVE (TAMBAHAN SAJA)
-    --    (Tanpa multiple driver + 2 beep benar2 kepisah)
+    --  2. BUZZER PASSIVE
     -- ==========================================
     process(clk)
     begin
@@ -207,7 +203,7 @@ begin
     buzzer <= buzzer_reg;
 
     -- ===============================
-    -- OUTPUT LED (CODE LAMA)
+    -- OUTPUT LED 
     -- ===============================
     led_ok    <= ok_reg;
     Led_wrong <= wrong_reg;
@@ -285,6 +281,7 @@ end case;
 end process;
 
 seg <= hex_temp;
+
 
 
 end Behavioral;
