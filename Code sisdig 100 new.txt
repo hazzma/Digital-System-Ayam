@@ -96,7 +96,7 @@ begin
                         -- INPUT PASSWORD
                         if count < 8 then
                             input_pw((count*4+3) downto (count*4)) <= switches;
-                            count <= count + 1;
+                            count <= count + 1; -- Butuh Nilai count slmnya
                         end if;
                     end if;
                 end if;
@@ -108,13 +108,13 @@ begin
                         wrong_reg    <= '0';
                         lock_counter <= (others => '0');
 
-                        -- ? TAMBAHAN: BENAR -> bip 1x
+                        -- ? TAMBAHAN: BENAR -> bib 2x
                         buzz_req <= "01";
                     else
                         wrong_reg <= '1';
                         ok_reg       <= '0';
 
-                        -- ? TAMBAHAN: SALAH -> bip 2x
+                        -- ? TAMBAHAN: SALAH -> bip 7x
                         buzz_req <= "10";
                     end if;
 
@@ -285,3 +285,4 @@ seg <= hex_temp;
 
 
 end Behavioral;
+
